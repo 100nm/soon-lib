@@ -1,0 +1,28 @@
+[tool.poetry]
+name = "soon-lib"
+version = "0.0.0"
+description = ""
+authors = ["remimd"]
+license = "MIT"
+packages = [{ include = "soon" }]
+readme = "README.md"
+repository = "https://github.com/soon-app/soon-lib"
+
+[tool.poetry.dependencies]
+python = ">=3.11, <4"
+babel = "^2.12.1"
+colorama = "^0.4.6"
+python-injection = "^0.2.4"
+typer = "^0.9.0"
+
+[tool.poetry.group.dev.dependencies]
+black = "*"
+flake8 = "*"
+isort = "*"
+pytest = "*"
+pytest-asyncio = "*"
+pytest-cov = "*"
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
