@@ -1,18 +1,17 @@
 import inspect
 from asyncio import iscoroutinefunction
 from contextlib import AbstractAsyncContextManager, AsyncExitStack, asynccontextmanager
-from functools import wraps
-from inspect import Parameter
-from types import FunctionType, MethodType, new_class
+from types import FunctionType, MethodType
 from typing import (
     Any,
     AsyncContextManager,
     Callable,
     Iterator,
     Protocol,
-    Self,
     runtime_checkable,
 )
+
+from soon.utils import Binder, FunctionWrapper
 
 
 @runtime_checkable
@@ -22,41 +21,20 @@ class Middleware(AbstractAsyncContextManager, Protocol):
 
 MiddlewareType = Callable[..., Middleware]
 
-_sentinel = new_class("Sentinel")()
 
+class UseCase(FunctionWrapper):
+    __slots__ = ("__middlewares",)
 
-class UseCase:
-    __slots__ = ("__base", "__function", "__middlewares")
+    def __init__(self, function: FunctionType, /):
+        if not iscoroutinefunction(function):
+            raise TypeError(f"`{function.__qualname__}` isn't an async function.")
 
-    def __init__(self, base_function: FunctionType):
-        if not iscoroutinefunction(base_function):
-            raise TypeError(f"`{base_function.__qualname__}` isn't an async function.")
-
-        self.__base = base_function
-        self.__function = None
+        super().__init__(function)
         self.__middlewares = set()
 
-    def __call__(self, /, *args, **kwargs) -> Any:
-        return self.function(*args, **kwargs)
-
-    def __get__(self, instance: object | None, owner: type) -> MethodType | Self:
-        if instance is None:
-            return self
-
-        return self.function.__get__(instance, owner)
-
-    @property
-    def function(self) -> FunctionType:
-        if self.__function is not None:
-            return self.__function
-
-        @wraps(self.__base)
-        async def function(*args, **kwargs):
-            async with self.post_processing(*args, **kwargs) as result:
-                return result
-
-        self.__function = function
-        return function
+    async def wrapper(self, /, *args, **kwargs) -> Any:
+        async with self.post_processing(*args, **kwargs) as result:
+            return result
 
     @asynccontextmanager
     async def post_processing(self, /, *args, **kwargs) -> AsyncContextManager[Any]:
@@ -64,17 +42,14 @@ class UseCase:
             for middleware in self.__bound_middlewares(*args, **kwargs):
                 await stack.enter_async_context(middleware)
 
-            yield await self.__base(*args, **kwargs)
+            yield await self.function(*args, **kwargs)
 
     def middleware(self, wrapped: FunctionType | MiddlewareType = None) -> Any:
         def decorator(wp):
-            if isinstance(wp, FunctionType):
+            if inspect.isfunction(wp):
                 middleware = asynccontextmanager(wp)
             else:
                 middleware = wp
-
-            if not issubclass(middleware, Middleware):
-                raise TypeError(f"`{middleware}` isn't a valid middleware.")
 
             self.__middlewares.add(middleware)
             return middleware
@@ -82,24 +57,11 @@ class UseCase:
         return decorator(wrapped) if wrapped else decorator
 
     def __bound_middlewares(self, /, *args, **kwargs) -> Iterator[Middleware]:
-        arguments = inspect.signature(self.__base).bind(*args, **kwargs).arguments
-
-        for middleware in self.__middlewares:
-            signature = inspect.signature(middleware)
-            copy = arguments.copy()
-            kw = {}
-
-            for name, parameter in signature.parameters.items():
-                if parameter.kind is Parameter.VAR_KEYWORD:
-                    kw.update(copy)
-
-                else:
-                    kw[name] = copy.pop(name, _sentinel)
-
-            yield middleware(**kw)
+        arguments = inspect.signature(self).bind_partial(*args).arguments
+        yield from Binder.map(self.__middlewares, **kwargs | arguments)
 
 
-def use_case(function: FunctionType = None) -> Any | UseCase:
+def use_case(function: FunctionType | MethodType = None, /) -> Any | UseCase:
     def decorator(fn):
         return UseCase(fn)
 
