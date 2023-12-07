@@ -1,9 +1,8 @@
 from inspect import getmembers
 from os import environ
-from typing import Any, final
+from typing import Any
 
 
-@final
 class Settings:
     def __init__(self, obj: Any):
         for name, value in getmembers(obj):

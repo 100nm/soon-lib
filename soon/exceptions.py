@@ -3,6 +3,8 @@ from typing import Any, Mapping
 
 
 class Error(Exception, ABC):
+    __slots__ = ()
+
     @property
     @abstractmethod
     def status_code(self) -> int:
@@ -15,6 +17,8 @@ class Error(Exception, ABC):
 
 
 class Invalid(Error):
+    __slots__ = ("__reason",)
+
     def __init__(self, reason: str):
         super().__init__(reason)
         self.__reason = reason
@@ -29,8 +33,10 @@ class Invalid(Error):
 
 
 class ValidationError(Invalid):
-    def __init__(self, errors: Mapping[str, Any], message: str = ""):
-        super().__init__(message)
+    __slots__ = ("__errors",)
+
+    def __init__(self, errors: Mapping[str, Any], reason: str = ""):
+        super().__init__(reason)
         self.__errors = errors
 
     @property
